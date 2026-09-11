@@ -1,6 +1,93 @@
+# READ THIS FIRST (2026-09-05): the confusion table below points the OTHER WAY
+
+> **Note (2026-09-11, release 1.2.0).** Two options this document argues about --
+> `assembly:open_search_safe` and `charge:ambiguity_margin` -- were **removed in 1.2.0**; the shipped
+> binary refuses either on the command line or in an ini file. The sections below are kept as the
+> falsification record that removed them, and the help strings and comments they quote are gone with
+> the options. Everything said about them is history, not the current tool.
+
+Re-verified against the code 2026-09-05, every claim below checked by hand:
+**most of this document argues against the wrong failure.**
+
+**1. `4->2` means WE said 4 and the truth was 2 -- an OVERCALL, not an undercall.**
+The benchmark collation keys the counter `zc[(z, best["Precursor.Charge"])]` with `z` read off OUR
+mzML, and prints it `f"{a}->{t}"`. So the key is (ours, truth). The delta-mass a search
+engine sees is ours minus truth = **+1198 Da** at m/z 600, not the -1198 that was quoted in the
+`assembly:open_search_safe` help string (removed in 1.2.0) and repeated below. The repository does not agree with
+itself on this.
+
+**2. That table belongs to a retired algorithm whose tie-break is the OPPOSITE of the shipped one.**
+The table is the `envelope` arm. Envelope breaks score ties toward the HIGHEST z
+(`if (a.z != b.z) return a.z > b.z;` in the envelope comparator). The shipping `count` arm breaks
+ties toward the LOWEST z (strict `>` over an ascending z loop from `best_n = 1`).
+**The shipped arm's confusion cells have never been measured -- they are `--` in the table below.**
+So the structural bias of the code that actually ships is toward UNDERCALL, and the fixes discussed
+in this file are aimed at an overcall produced by a tie-break the shipped code does not contain.
+
+**3. The envelope 49.7% measures a bug, so "averagine cosine cannot break z vs 2z" is unproven.**
+`xicCorr` returns a sentinel `-2.0` when fewer than three frames overlap or a variance is
+zero. That sentinel is then averaged in and clamped:
+`mean_corr = cn ? std::max(0.0, csum / cn) : 0.0`. One isotope with <3 shared frames therefore
+zeroes `cos_sim * mean_corr * evidence` outright, every poisoned hypothesis ties at exactly 0.0, and
+the tie-break hands the seed the HIGHEST charge that found two partners. That is a complete
+mechanical account of the 15,734 `4->2` cells. It fires often: `trace:min_length_sec` is 3.0 s
+against a measured MS1 FWHM of 3.61 s, so MS1 traces routinely sit on the `m < 3` cliff. The
+reference tool reaches 82.6% using exactly the criteria this file concluded were insufficient.
+
+**4. The one unambiguous code defect: the count walk always starts at z=1.**
+The walk is `for (int z = 1; z <= max_charge; ++z)` regardless of `charge:min_charge`. A seed won by
+z=1 marks its seed and every partner `used[]`, and only afterwards are z<zmin precursors erased.
+**The peaks are spent on a precursor that is then deleted, and no z>=2 hypothesis is ever formed for
+that seed.** This is an ownership defect and it is one line. It is dormant at the shipped default
+(`charge:min_charge=1` emits the z=1 call rather than erasing it) and live whenever `min_charge` is
+raised above 1.
+
+**5. `assembly:open_search_safe` was a strict no-op, and the 2026-09-04 default made it worse.**
+It set `pc.charge = 0` only where `pc.charge == 0` already, and marked exactly that set
+`guessed`; the emission path then erased every `guessed` precursor whenever
+`assembly:require_isotope_support == "true"` -- the default since 2026-09-04. The precursors the
+flag existed to protect were deleted before it could act, and its comment still read "OFF by
+default". **This is what removed it in 1.2.0.**
+
+**6. Charge errors cost CLOSED-search identifications today, in the published numbers.**
+`msfragger.params` has `override_charge = 0`, so MSFragger TRUSTS our annotation. Measured
+2026-09-02 (the charge-corruption test in `docs/BENCHMARK-MATRIX-2026-09-01.md`): forcing the engine to re-derive charge
+instead (`override_charge=1, z=1..5`) moved DIAspeXtractor 10,750 -> **11,238 (+4.5%)** against the
+reference tool's 13,004 -> 13,276 (+2.1%), narrowing the gap 2,254 -> 2,038. So roughly 10% of the
+MSFragger deficit is our charge labels, and it is recoverable. The counter-claim that stood in the
+`assembly:open_search_safe` help string -- "Closed search barely notices (charge unset cost only
+1.3%: 8,123->8,019)" -- had no provenance anywhere in the repository.
+
+**7. Every published charge number describes a tool that no longer exists.** 74.6% and the arm table
+predate `charge:min_charge=2`, `assembly:require_isotope_support=true`, the apex m/z estimator, the
+integer detector and `perf:stream_load` -- the last of which is not output-neutral. The measured
+population is disjoint from the shipped one, so 74.6% cannot be differenced against anything. It is
+nonetheless still quoted as a live adoption gate in `bench/README.md`.
+
+**8. Charge is the only metric in the harness with no chance floor.** The shifted-query control in
+the benchmark collation records `matched_decoy` but not `charge_pairs`. Correcting this can only
+help: on a chance match our z is independent of truth, so chance agreement is
+`sum_z p_ours(z) p_truth(z) <= max_z p_truth(z)` -- chance matches drag the score toward or below
+the constant baseline, so the honest margin over "always answer z=2" is **wider** than +5.0 points.
+
+**THE ADJUDICATION EXPERIMENT** that would settle the direction question empirically: pair our
+spectra with the reference tool's on co-identified precursors and decide from the spectra which is
+right. Note its central trap -- both engines TRUST the declared charge, so the adjudicating search
+must re-derive it or the test merely echoes our own annotation back at us.
+
+**WHAT TO DO, in order.** (a) Fix the z=1 ownership defect -- start the walk at `min_charge` -- and
+gate it on both engines plus entrapment, since it changes what is emitted. (b) Re-measure the
+confusion table on the SHIPPED arm before designing anything else; the direction of the error is
+currently unknown. (c) Fix the `xicCorr` sentinel, then re-test envelope scoring, which has never
+been fairly evaluated. (d) Decide whether to ship `override_charge=1` in the benchmark config, or
+treat the +4.5% as the size of the prize for fixing charge properly. Do NOT build a learned charge
+model against the 74.6% gate: the number is stale and the gate's 0.17% noise floor is itself retired.
+
+---
+
 # Charge inference: what the 15.9% is, and what will not fix it
 
-The [[ms1-funnel]] localises **15.9%** of precursor loss to wrong charge assignment and
+The MS1 funnel analysis localises **15.9%** of precursor loss to wrong charge assignment and
 **10.5%** to failed monoisotope identification — against only 2.2% undetected. Truth-set
 charge agreement is **47.8% vs the reference implementation's 82.6%**, dominant confusion `4→2` (15,734 cases).
 
@@ -124,7 +211,7 @@ m/z 600 -- invisible to closed search (the engine enumerates charge) and fatal t
 Shipping `trace:ms1_split_valleys` without `charge:scoring count` would have been actively
 harmful for this tool's actual purpose.
 
-### `charge:ambiguity_margin` -- falsified, four tests
+### `charge:ambiguity_margin` -- falsified, four tests (option removed in 1.2.0)
 
 | margin | peptide_q | vs `split_count` 8,411 |
 |---|---|---|

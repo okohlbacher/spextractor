@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
-project(SpeXtractor VERSION 0.3.0 LANGUAGES CXX)
+project(DIAspeXtractor VERSION 1.2.0 LANGUAGES CXX)
 
-# SpeXtractor is a STANDALONE application that links against an existing OpenMS
+# DIAspeXtractor is a STANDALONE application that links against an existing OpenMS
 # installation. It is deliberately not part of the OpenMS source tree: OpenMS is a
 # prerequisite here, not a host.
 #
@@ -14,37 +14,65 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
+# src/DnoiseMs1.h reproduces dnoise's MS1 window gate bit for bit only without floating-point
+# contraction: an FMA flips 3 of dataset D's 24 boxes, and Apple clang on arm64 contracts by default.
+# The header guards its own arithmetic; the flag keeps the translation units around it honest too, and
+# matches the cluster's in-tree build, where OpenMS compiles with it but does not export it.
+add_compile_options($<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-ffp-contract=off>)
+
 # The tool itself cannot be built without a PATCHED OpenMS: it includes
 # <OpenMS/FORMAT/TdfMzCalibration.h>, which scripts/apply_openms_patches.sh installs into the
 # OpenMS tree, and calls BrukerTimsFile::lastMzCalibration, which the same patch adds. No released
 # OpenMS package contains either. The calibration model, however, is a self-contained header, so
-# it can be compiled and tested anywhere -- which is what CI does on every platform.
-option(SPEXTRACTOR_TESTS_ONLY "Build only the OpenMS-independent tests (portability CI)" OFF)
-if(SPEXTRACTOR_TESTS_ONLY)
+# it can be compiled and tested anywhere -- which is what CI does on every platform. So is the
+# dnoise MS1 port (src/DnoiseMs1.h).
+option(DIASPEXTRACTOR_TESTS_ONLY "Build only the OpenMS-independent tests (portability CI)" OFF)
+# Before the rename to DIAspeXtractor the option was SPEXTRACTOR_TESTS_ONLY. CMake would ignore the old name and take the
+# full build, which then fails far from the cause in find_package(OpenMS), so the old name stops the configure here.
+if(DEFINED SPEXTRACTOR_TESTS_ONLY)
+  message(FATAL_ERROR "SPEXTRACTOR_TESTS_ONLY is now DIASPEXTRACTOR_TESTS_ONLY (SpeXtractor was renamed DIAspeXtractor): "
+    "configure with -DDIASPEXTRACTOR_TESTS_ONLY=ON, and drop the old entry from an existing build directory with "
+    "-U SPEXTRACTOR_TESTS_ONLY.")
+endif()
+# The dnoise port ships inside the tool, so both builds compile and register its unit test (it needs no OpenMS).
+enable_testing()
+add_executable(test_dnoise_ms1 tests/test_dnoise_ms1.cpp)
+target_include_directories(test_dnoise_ms1 PRIVATE src)
+add_test(NAME dnoise_ms1 COMMAND test_dnoise_ms1)
+# src/TdfLoad.h reads analysis.tdf through sqlite3, so its test builds wherever SQLite is found (not on the Windows
+# portability leg). It includes the calibration model as the patched OpenMS installs it; the shim maps that include onto
+# src/TdfMzCalibration.h, the same file.
+find_package(SQLite3 QUIET)
+if(SQLite3_FOUND)
+  configure_file(src/TdfMzCalibration.h ${CMAKE_CURRENT_BINARY_DIR}/shim/OpenMS/FORMAT/TdfMzCalibration.h COPYONLY)
+  add_executable(test_tdf_load tests/test_tdf_load.cpp)
+  target_include_directories(test_tdf_load PRIVATE src ${CMAKE_CURRENT_BINARY_DIR}/shim)
+  target_link_libraries(test_tdf_load PRIVATE SQLite::SQLite3)
+  add_test(NAME tdf_load COMMAND test_tdf_load)
+endif()
+if(DIASPEXTRACTOR_TESTS_ONLY)
   add_executable(test_calibration_cpp tests/test_calibration_cpp.cpp)
   target_include_directories(test_calibration_cpp PRIVATE src)
-  enable_testing()
   add_test(NAME calibration_golden
            COMMAND test_calibration_cpp ${CMAKE_CURRENT_SOURCE_DIR}/tests/calibration_golden.json)
   return()
 endif()
 
 find_package(OpenMS REQUIRED)
-find_package(OpenMP)
+find_package(OpenMP REQUIRED)   # the window loop and the picker call omp_* unconditionally
 find_package(SQLite3 REQUIRED)   # analysis.tdf is read directly; a missing SQLite is a build error, not a fallback
 
-add_executable(spextractor src/spextractor.cpp)
-target_link_libraries(spextractor PRIVATE OpenMS SQLite::SQLite3)
-
-if(OpenMP_CXX_FOUND)
-  # The window/band loop is OpenMP-parallel; without it the tool still builds and runs,
-  # but serially -- and the memory-admission logic degrades to one window at a time.
-  target_link_libraries(spextractor PRIVATE OpenMP::OpenMP_CXX)
-else()
-  message(WARNING "OpenMP not found: spextractor will run single-threaded.")
+add_executable(diaspextractor src/diaspextractor.cpp)
+target_link_libraries(diaspextractor PRIVATE OpenMS SQLite::SQLite3 OpenMP::OpenMP_CXX)
+target_compile_definitions(diaspextractor PRIVATE DIASPEXTRACTOR_VERSION="${PROJECT_VERSION}")
+# The source carries the same number as a fallback for builds that do not go through this file
+# (the in-tree OpenMS build); refuse to configure if the two have drifted.
+file(STRINGS src/diaspextractor.cpp _spx_fallback REGEX "^#define DIASPEXTRACTOR_VERSION \"")
+if(NOT _spx_fallback MATCHES "\"${PROJECT_VERSION}\"")
+  message(FATAL_ERROR "src/diaspextractor.cpp's DIASPEXTRACTOR_VERSION fallback (${_spx_fallback}) != project VERSION ${PROJECT_VERSION}")
 endif()
 
-install(TARGETS spextractor RUNTIME DESTINATION bin)
+install(TARGETS diaspextractor RUNTIME DESTINATION bin)
 
 # Optional streaming .mzpeak input through the mzPeak C++ library (github.com/OpenMS/mzpeak).
 # -DMZPEAK_ROOT=<checkout with include/ and a built libmzpeak in build*/>. Without it the tool
@@ -53,7 +81,7 @@ if(MZPEAK_ROOT)
   find_library(MZPEAK_LIB NAMES mzpeak PATHS ${MZPEAK_ROOT} PATH_SUFFIXES build build-release buildfix REQUIRED)
   find_package(Arrow REQUIRED)
   find_package(Parquet REQUIRED)
-  target_compile_definitions(spextractor PRIVATE SPEXTRACTOR_WITH_MZPEAK)
-  target_include_directories(spextractor PRIVATE ${MZPEAK_ROOT}/include)
-  target_link_libraries(spextractor PRIVATE ${MZPEAK_LIB} Parquet::parquet_static Arrow::arrow_static zip)
+  target_compile_definitions(diaspextractor PRIVATE DIASPEXTRACTOR_WITH_MZPEAK)
+  target_include_directories(diaspextractor PRIVATE ${MZPEAK_ROOT}/include)
+  target_link_libraries(diaspextractor PRIVATE ${MZPEAK_LIB} Parquet::parquet_static Arrow::arrow_static zip)
 endif()

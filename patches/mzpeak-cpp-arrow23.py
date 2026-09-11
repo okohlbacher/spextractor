@@ -1,7 +1,7 @@
 # Arrow 23 (OpenMS contrib) has only the out-parameter ReadTable; the fork uses the Arrow-24 Result form
 # at ONE site. Version-guarded so the source stays correct for Arrow >= 24.
 import sys
-p = sys.argv[1] if len(sys.argv) > 1 else "/path/to/scratch/mzpeak-cpp/src/util/metadata_model.cpp"
+p = sys.argv[1] if len(sys.argv) > 1 else "mzpeak-cpp/src/util/metadata_model.cpp"
 s = open(p).read()
 if "ARROW_VERSION_MAJOR < 24" in s: print("already applied"); raise SystemExit
 old = """  arrow::Result<std::shared_ptr<arrow::Table>> result =
@@ -11,7 +11,7 @@ old = """  arrow::Result<std::shared_ptr<arrow::Table>> result =
   }
   return std::move(result).ValueOrDie();
 """
-new = """#if ARROW_VERSION_MAJOR < 24   // SpeXtractor cluster build: contrib Arrow 23 has only the out-parameter form
+new = """#if ARROW_VERSION_MAJOR < 24   // DIAspeXtractor cluster build: contrib Arrow 23 has only the out-parameter form
   std::shared_ptr<arrow::Table> table;
   arrow::Status st = metadata.reader().ReadTable(&table);
   if (!st.ok()) {

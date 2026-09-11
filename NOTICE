@@ -1,4 +1,4 @@
-SpeXtractor
+DIAspeXtractor
 Copyright (c) 2026 Oliver Kohlbacher and contributors
 
 This product is derived from and links against OpenMS.
@@ -8,10 +8,20 @@ This product is derived from and links against OpenMS.
   Licensed under the BSD 3-Clause License
   https://github.com/OpenMS/OpenMS
 
-src/spextractor.cpp originated as a TOPP tool inside the OpenMS source tree and
+src/diaspextractor.cpp originated as a TOPP tool inside the OpenMS source tree and
 was extracted into this standalone repository. It uses OpenMS classes including
 MassTraceDetection, ElutionPeakDetection, PeakPickerIM, BrukerTimsFile and
 FullSwathFileConsumer, and retains OpenMS's BSD-3-Clause terms.
+
+Ported code, used under its own licence (full text in LICENSES/):
+
+  dnoise v0.1.0 -- Garrett, Diedrich & Yates III, bioRxiv 2026.08.27.747603
+  https://github.com/pgarrett-scripts/dnoise (tag v0.1.0, commit fa750c9)
+  MIT License, Copyright (c) 2026 Patrick Garrett -- LICENSES/dnoise-MIT.txt
+  src/DnoiseMs1.h is a C++ port of its default MS1 denoising: the streak filter,
+  the halo filter and the diaPASEF MS1 window gate, including the timsrust 0.4.2
+  (Apache-2.0) two-point calibration formulas dnoise builds that gate with --
+  LICENSES/timsrust-Apache-2.0.txt.
 
 Algorithmic ideas were reviewed against, but no code was taken from:
 

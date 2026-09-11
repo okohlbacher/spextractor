@@ -2,9 +2,7 @@
 
 ## `sage_closed.json` — the closed metric (what every README number came from)
 
-Byte-for-byte the configuration behind every `peptide_q` figure in the repo. It previously
-existed **only** at `/path/to/scratch/bench/sage_deiso.json`, untracked — a reproducibility
-hole in the single file that *defines* the project's metric.
+Byte-for-byte the configuration behind every `peptide_q` figure in the repo.
 
 What it structurally cannot see: `precursor_tol` is ±25 ppm. A charge error fabricates
 ΔM = (z′−z)(m/z − 1.00728) — hundreds of Da — so those PSMs are never reported. **Closed search
@@ -24,8 +22,7 @@ Three measurements, ordered by how much they assume:
    *linear in m/z* and form **rays** through (1.00728, 0) with integer slopes; real
    modifications are constant shifts and form **horizontal bands**. Separable by construction.
    Validated on synthetic data: 300/300 slope −2 rays recovered, 125× over the chance floor,
-   pure-noise control at 0.0000 vs a 0.0123 floor. **Reports its own chance floor** — the
-   omission that got the MS1 funnel retracted.
+   pure-noise control at 0.0000 vs a 0.0123 floor. **Reports its own chance floor.**
 2. **Entrapment FDR** — 16,343 *A. thaliana* proteins vs 20,416 human (ratio 0.800). Independent
    of the decoy model, which degrades as open search grows the candidate space ~10³×
    (Kong 2017; Chick 2015; Wen et al., *Nat Methods* 2025).
@@ -68,7 +65,7 @@ is the error class this benchmark exists to eliminate.
 
 ## `joint_bench.py` — the success metric across the three datasets
 
-**3 samples × {the reference implementation, SpeXtractor} × {Sage, MSFragger}**, reporting the two numbers the
+**3 samples × {the reference implementation, DIAspeXtractor} × {Sage, MSFragger}**, reporting the two numbers the
 project is scored on:
 
 * **PSMs** at ≤1% PSM-level FDR
@@ -87,7 +84,7 @@ For the same reason both engines search **one pre-built target+decoy FASTA** wit
 byte-identical search spaces.
 
 Peptide-level FDR is "picked": best-scoring PSM per distinct sequence, then target-decoy over
-that reduced list. That axis is the point — SpeXtractor emits ~4.6 PSMs/peptide against
+that reduced list. That axis is the point — DIAspeXtractor emits ~4.6 PSMs/peptide against
 the reference implementation's 1.46, so PSM counts reward redundancy and peptide counts do not. **Both are
 reported so the gap is visible rather than hidden.**
 
@@ -101,7 +98,7 @@ hyperscore is not, which favours Sage on absolute counts. Adding Percolator to M
 would reintroduce the confound this design removes; adding it to *both* is the correct fix and
 is not done here.
 
-**The tool comparison is unaffected** — the reference implementation vs SpeXtractor is made *within* an engine, and
+**The tool comparison is unaffected** — the reference implementation vs DIAspeXtractor is made *within* an engine, and
 that is the comparison this harness exists for. The engine axis is a secondary readout.
 
 ### Run

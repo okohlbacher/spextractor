@@ -4,9 +4,6 @@
 discrete at the source. Define one global m/z axis and a spectrum becomes a vector of intensities.
 This follows the global RT axis (already landed) and applies the same idea to the other dimension.
 
-**Status.** Design + implementation on branch `mz-axis` in a separate worktree. To be reintegrated
-and measured against the current head on memory, runtime and parallel occupancy.
-
 ## 1. What is already discrete, and what is thrown away
 
 The compact peak store is *already* on a uniform integer m/z grid:
@@ -51,23 +48,19 @@ Three reasons the native axis is better in kind, not merely smaller:
    of the ppm tolerance is spent absorbing that drift. In bin space it is not spent at all.
 3. **An index of 5e5 is a usable subscript.** 1.7e8 is not.
 
-`spextractor::TdfMzCalibration` already provides both directions, `tofToMz(tof, b)` and
+`diaspextractor::TdfMzCalibration` already provides both directions, `tofToMz(tof, b)` and
 `mzToTof(mz, b)`, plus `frameFactor(T1)`. So the axis is:
 
 ```cpp
 using TofIdx = uint32_t;
 struct TofAxis {
-  spextractor::TdfMzCalibration cal;
+  diaspextractor::TdfMzCalibration cal;
   vector<double> b_by_frame;     // per vendor frame Id
   double factor(size_t frame_id) const;
   double mzOf(TofIdx tof, double b) const;      // report time only
   TofIdx tofOf(double mz, double b) const;      // load time only
-  TofIdx span(TofIdx tof, double b, double ppm) const;   // tolerance in BINS, derived not assumed
 };
 ```
-
-`span()` converts both ends of the tolerance through the calibration rather than assuming
-`m ~ tof^2`, so the quadratic term the model carries is respected.
 
 **The extraction never needs a calibrated m/z at all.** Grouping, gating and correlation all work on
 bins; the calibration is applied once per trace, at report time, with the apex frame's own factor --
@@ -87,10 +80,10 @@ exactly. The conversion happens once, when a window's slab is built.
 /// The m/z axis is global, uniform and integer: index i means m/z = i / MZ_Q. Stored nowhere,
 /// because it is an affine function of the index -- unlike the RT axis, which has to be a table.
 using TofIdx = uint32_t;                      // the instrument's flight-time bin
-// mzOf / tofOf / span live on TofAxis (section 2): they need the frame's calibration factor.
+// mzOf / tofOf live on TofAxis (section 2): they need the frame's calibration factor.
 ```
 
-A frame is what `CompactFrame` already is. A **peak** never becomes a `Peak1D` again:
+A frame is a row of `PeakSlab`'s frame table. A **peak** never becomes a `Peak1D` again:
 
 ```cpp
 /// One window's peaks, frame-major, in index space. Replaces the materialised PeakMap.
@@ -145,7 +138,7 @@ These become integer differences against a precomputed span.
 
 **Banding can be made exact, or provably not.** The band edges become index cut points and the halo
 becomes an exact index count. Whether that makes banding exact depends on whether a trace's total
-index span is boundable -- the drifting-centroid question raised in the banding review. If it is
+index span is boundable -- the drifting-centroid question. If it is
 not, the honest outcome is a bound enforced by construction (cap a trace's span in index units), and
 banding becomes exact *by definition of the detector* rather than by hope.
 
@@ -161,9 +154,10 @@ banding becomes exact *by definition of the detector* rather than by hope.
 5. **Banding on index cut points**, with the span bound made explicit.
 
 Steps 1, 2, 4 are output-neutral and can be verified by the semantic digest. Step 3 is a new
-algorithm and must clear the both-engines rule. Step 5 depends on the banding review's verdict.
+algorithm and must clear the both-engines rule. Step 5 depends on whether the span bound of step 4
+holds.
 
-## 6. How it will be measured on reintegration
+## 6. How it is to be measured
 
 Against the current head, on dataset D and dataset A, 100 threads, same node:
 

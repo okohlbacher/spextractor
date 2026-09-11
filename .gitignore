@@ -10,3 +10,14 @@ harness/samples.yaml
 # Benchmark drivers with real acquisition paths, never committed.
 bench/run_joint.sh
 bench/run_open.sh
+
+# Frozen run records: kept locally, not in the repository.
+evidence/
+
+# Review dispatch/stderr logs: the .md reviews are the artefact.
+docs/reviews/**/*.log
+
+# Review inputs that quote the sample registry: they stay local. No tracked file names a raw
+# acquisition path.
+harness/review/corpus-brief.md
+harness/review/*.transcript
